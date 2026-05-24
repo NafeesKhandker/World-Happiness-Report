@@ -1,0 +1,542 @@
+---
+title: "DATA 606 Data Project"
+author: "Khandker M Qaiduzzaman"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, echo=TRUE, warning=FALSE, message=FALSE}
+
+library(tidyverse)
+library(readxl)
+library(GGally)
+library(corrplot)
+library(broom)
+library(patchwork)
+library(glmnet)
+library(ggplot2)
+library(infer)
+
+happiness_data <- read_excel("C:/Users/Khandker/Documents/Final Project/World_happiness_data_region.xlsx")
+
+str(happiness_data)
+colnames(happiness_data)
+```
+
+## ANALYSIS STARTS HERE
+
+### Renames the columns
+The column names of the original dataset is too large that might obscure the essential information in the plots. Therefore, the column names are renamed with shorter names as below:
+
+```{r}
+happiness_data <- happiness_data %>%
+  rename(
+    Year = Year,
+    Rank = Rank,
+    Country = `Country name`,
+    Score = `Ladder score`,
+    UpperWhisker = upperwhisker,
+    LowerWhisker = lowerwhisker,
+    GDP = `Explained by: Log GDP per capita`,
+    SocialSupport = `Explained by: Social support`,
+    Health = `Explained by: Healthy life expectancy`,
+    Freedom = `Explained by: Freedom to make life choices`,
+    Generosity = `Explained by: Generosity`,
+    Corruption = `Explained by: Perceptions of corruption`,
+    DystopiaResidual = `Dystopia + residual`,
+    Region = `Region`
+  )
+
+colnames(happiness_data)
+```
+
+### Data Visualization
+
+```{r}
+happiness_allVar <- happiness_data %>%
+  select(
+    GDP,
+    SocialSupport,
+    Health,
+    Freedom,
+    Generosity,
+    Corruption,
+    Rank,
+    Score,
+    Year,
+    Rank,
+    Country, 
+    UpperWhisker,
+    LowerWhisker,
+    DystopiaResidual,
+    Region
+  ) %>%
+  na.omit()
+
+#ggpairs(happiness_subset)
+```
+
+```{r}
+happiness_subset <- happiness_data %>%
+  select(
+    GDP,
+    SocialSupport,
+    Health,
+    Freedom,
+    Generosity,
+    Corruption,
+    Rank,
+    Score,
+  ) %>%
+  na.omit()
+
+ggpairs(happiness_subset)
+```
+
+From the ggpairs plot, we can see that `Rank` is highly correlated to `Score` (-0.98). This means `Rank` is the inverse representation of `Score`. A country with higher `Score` should have lower `Rank`. Other explanatory variables such as `GDP`, `SocialSupport`, `Health`, `Freedom`, `Corruption` has higher correlation with `Score`. Therefore, these variables could be useful to explain `Score` of a country. On the other hand, `Generosity` has the lowest correlation (0.043) with `Score`.
+
+## Analysis of GDP versus Score:
+
+To find how GDP is related to Score, a linear model can be used as below: 
+```{r}
+lm_gdp <- lm(Score ~ GDP, data = happiness_subset)
+happiness_augmented <- augment(lm_gdp)
+
+summary(lm_gdp)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 3.49940 + 1.66807 \times \text{GDP}
+$$
+From the model equation and summary it can be said that for one unit increase in `GDP`, `Score` increases by 1.66807. The p-value (2e-16) is much lower than alpha = 0.05, indicating `GDP` to be a significant predictor for `Score`. The R-square value reveals that around 47.42% of `Score` can be interpreted by `GDP`.  
+
+A linear regression line and model diagnosis plots are presented below for validation. The residual plot shows that the model preserves linearity since the fitted values are evenly scattered on both sides of horizontal axis, and shows no pattern. The histogram and Q-Q plot also confirms the normality condition. Since the residual plot does not show any cone or funnel shapes, variability condition is also met.
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = GDP, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("GDP vs Happiness Score") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+## Analysis of Social Support versus Score:
+
+To find how Social Support is related to Score, a linear model can be used as below: 
+```{r}
+lm_socialsupport <- lm(Score ~ SocialSupport, data = happiness_subset)
+happiness_ss_augmented <- augment(lm_socialsupport)
+
+summary(lm_socialsupport)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 3.18772 + 2.17989 \times \text{SocialSupport}
+$$
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = SocialSupport, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("SocialSupport vs Happiness") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_ss_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_ss_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_ss_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+
+## Analysis of Health versus Score:
+
+To find how Health is related to Score, a linear model can be used as below: 
+```{r}
+lm_health <- lm(Score ~ Health, data = happiness_subset)
+happiness_hlth_augmented <- augment(lm_health)
+
+summary(lm_health)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 3.73624 + 3.31411 \times \text{Health}
+$$
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = Health, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("Health vs Happiness Score") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_hlth_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_hlth_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_hlth_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+
+## Analysis of Freedom versus Score:
+
+To find how Freedom is related to Score, a linear model can be used as below: 
+```{r}
+lm_freedom <- lm(Score ~ Freedom, data = happiness_subset)
+happiness_freedm_augmented <- augment(lm_freedom)
+
+summary(lm_freedom)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 3.6293  + 3.3828 \times \text{Freedom}
+$$
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = Freedom, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("Freedom vs Happiness Score") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_freedm_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_freedm_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_freedm_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+
+## Analysis of Corruption versus Score:
+
+To find how Corruption is related to Score, a linear model can be used as below: 
+```{r}
+lm_corruption <- lm(Score ~ Corruption, data = happiness_subset)
+happiness_corrupt_augmented <- augment(lm_corruption)
+
+summary(lm_corruption)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 4.9523  + 4.0401 \times \text{Corruption}
+$$
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = Corruption, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("Corruption vs Happiness Score") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_corrupt_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_corrupt_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_corrupt_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+
+## Analysis of Generosity versus Score:
+
+To find how Generosity is related to Score, a linear model can be used as below: 
+```{r}
+lm_generosity <- lm(Score ~ Generosity, data = happiness_subset)
+happiness_generosity_augmented <- augment(lm_generosity)
+
+summary(lm_generosity)
+```
+The linear model equation is: 
+$$
+\hat{\text{Score}} = 5.44970  + 0.55346 \times \text{Generosity}
+$$
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- ggplot(data = happiness_subset, aes(x = Generosity, y = Score)) +
+  geom_jitter() +
+  geom_smooth(method = "lm") +
+  ggtitle("Generosity vs Happiness Score") +
+  theme_minimal()
+
+p2 <- ggplot(data = happiness_generosity_augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = happiness_generosity_augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = happiness_generosity_augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+
+
+
+
+## Multiple Linear Regression:
+```{r}
+mlr_full <- lm(Score ~ GDP 
+             + SocialSupport + Health + Freedom + Generosity + Corruption, data = happiness_allVar)
+mlr_full__augmented <- augment(mlr_full)
+summary(mlr_full)
+```
+
+
+```{r}
+mlr_full <- lm(Score ~ GDP 
+             + SocialSupport + Health + Freedom + Generosity + Corruption + Region, data = happiness_allVar)
+mlr_full__augmented <- augment(mlr_full)
+summary(mlr_full)
+```
+
+### Dimentionality reduction
+
+```{r}
+happiness_allVar$RegionSimplified <- as.character(happiness_allVar$Region)
+happiness_allVar$RegionSimplified[happiness_allVar$Region %in% c("Asia-Pacific", "Europe")] <- "Other"
+happiness_allVar$RegionSimplified <- as.factor(happiness_allVar$RegionSimplified)
+
+# Fit new model
+model_reduced <- lm(Score ~ GDP + SocialSupport + Health + Freedom + 
+                      Generosity + Corruption + RegionSimplified, data = happiness_allVar)
+summary(model_reduced)
+```
+
+
+2x2 plot:
+
+```{r}
+# Create each plot
+p1 <- NULL
+
+p2 <- ggplot(data = mlr_full__augmented, aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  xlab("Fitted values") +
+  ylab("Residuals") +
+  ggtitle("Residuals vs Fitted") +
+  theme_minimal()
+
+p3 <- ggplot(data = mlr_full__augmented, aes(x = .resid)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "black") +
+  xlab("Residuals") +
+  ggtitle("Histogram of Residuals") +
+  theme_minimal()
+
+p4 <- ggplot(data = mlr_full__augmented, aes(sample = .resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  ggtitle("QQ Plot of Residuals") +
+  theme_minimal()
+
+# Combine the four plots into a 2x2 grid
+(p1 | p2) / (p3 | p4)
+```
+
+### Inference
+
+```{r}
+# Define high and low-income groups based on GDP
+median_gdp <- median(happiness_allVar$GDP, na.rm = TRUE)
+
+# Create IncomeGroup variable: High and Low based on GDP
+happiness_inf <- happiness_allVar %>%
+  mutate(IncomeGroup = ifelse(GDP > median_gdp, "High", "Low"))
+
+ggplot(happiness_inf, aes(x = IncomeGroup, y = Score, fill = IncomeGroup)) +
+  geom_boxplot() +
+  labs(title = "Happiness Score by Income Group",
+       x = "Income Group", y = "Happiness Score") +
+  theme_minimal()
+```
+
+### mean of happiness score for each income group
+
+• Independence: we assume World_happiness_data collection method ensures independent sampling. The data has been collected randomly and the sample size is small (less than 10%) relative to the population size.
+
+• Sample size: we can look into the sample size using the following code:
+
+The distribution looks nearly normal. According to the income group sizes, the “High” and “Low” groups both have above 30 observations (433 and 435, respectively), meeting the sample size requirement.
+```{r}
+happiness_inf %>%
+group_by(IncomeGroup) %>%
+summarise(mean_score = mean(Score, na.rm = TRUE), n = n())
+```
+
+```{r}
+#gdp_data <- na.omit(happiness_allVar$GDP)
+
+# Create a data frame for plotting
+gdp_df <- data.frame(GDP = happiness_allVar$GDP)
+
+# Plot histogram with overlaid normal distribution curve
+ggplot(gdp_df, aes(x = GDP)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+  stat_function(fun = dnorm, 
+                args = list(mean = mean(happiness_allVar$GDP), sd = sd(happiness_allVar$GDP)), 
+                color = "red", size = 1) +
+  labs(title = "Distribution of GDP with Normal Curve",
+       x = "GDP",
+       y = "Density") +
+  theme_minimal()
+```
+### Define hypothesis
+
+Null Hypothesis (H0): There is no significant difference in the mean happiness scores between high-income and low-income countries.
+$$
+H_0: \mu_{\text{high}} = \mu_{\text{low}}
+$$
+Alternative Hypothesis (H1): There is a significant difference in the mean happiness scores between high-income and low-income countries.
+$$
+H_1: \mu_{\text{high}} \ne \mu_{\text{low}}
+$$
+
+```{r}
+obs_diff <- happiness_inf %>%
+  specify(Score ~ IncomeGroup) %>%                  
+  calculate(stat = "diff in means",                  
+            order = c("High", "Low"))               
+
+obs_diff
+```
+
+```{r}
+set.seed(1234)
+null_dist <- happiness_inf %>%
+  specify(Score ~ IncomeGroup) %>%                     
+  hypothesize(null = "independence") %>%               
+  generate(reps = 1000, type = "permute") %>%          
+  calculate(stat = "diff in means", order = c("High", "Low"))  
+ggplot(data = null_dist, aes(x = stat)) +
+geom_histogram()
+```
+
+```{r}
+p_value <- suppressWarnings(null_dist %>%
+  get_p_value(obs_stat = obs_diff, direction = "two_sided"))
+p_value
+```
+
+```{r}
+diff_ci <- null_dist %>%
+get_confidence_interval(level = 0.95, type = "percentile")
+diff_ci
+```
+This strongly suggests that we reject the null hypothesis in favor of the alternative hypothesis, which implies that there is a significant difference in happiness scores between high-income and low-income countries.
